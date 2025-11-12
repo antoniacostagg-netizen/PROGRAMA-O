@@ -69,6 +69,73 @@
                 width: 1em;
                 margin-left: -1em;
             }
+            
+            /* Estilos para a tabela de impressão */
+            .schedule-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 1rem;
+            }
+            .schedule-table th {
+                background-color: #3b82f6;
+                color: white;
+                padding: 0.5rem;
+                text-align: center;
+                border: 1px solid #1e3a8a;
+            }
+            .schedule-table td {
+                padding: 0.5rem;
+                border: 1px solid #ccc;
+                vertical-align: top;
+                min-height: 80px;
+            }
+            .schedule-table .time-slot {
+                font-size: 0.8rem;
+                margin-bottom: 0.25rem;
+                padding: 0.2rem;
+                background-color: #eff6ff;
+                border-radius: 0.25rem;
+            }
+        }
+        
+        /* Estilos para a tabela na visualização web */
+        .web-schedule-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .web-schedule-table th {
+            background-color: #3b82f6;
+            color: white;
+            padding: 0.75rem;
+            text-align: center;
+            border: 1px solid #1e3a8a;
+        }
+        .web-schedule-table td {
+            padding: 0.75rem;
+            border: 1px solid #cbd5e0;
+            vertical-align: top;
+            min-height: 100px;
+        }
+        .web-schedule-table .time-slot {
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+            padding: 0.375rem;
+            background-color: #eff6ff;
+            border-radius: 0.375rem;
+            border-left: 3px solid #3b82f6;
+        }
+
+        /* Estilos para a tabela de exportação */
+        .export-table-container {
+            position: fixed;
+            top: -10000px;
+            left: -10000px;
+            width: 1000px;
+            background: white;
+            padding: 20px;
+            z-index: 10000;
         }
     </style>
 </head>
@@ -173,6 +240,9 @@
         </section>
 
     </div>
+
+    <!-- Container para exportação (fora da tela) -->
+    <div id="export-container" class="export-table-container"></div>
     
     <!-- Modal para Adicionar Compromisso -->
     <div id="commitmentModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50 print-hidden">
@@ -229,6 +299,7 @@
 
         const SCHEDULE_BUILDER = document.getElementById('schedule-builder');
         const SCHEDULE_OUTPUT = document.getElementById('schedule-output');
+        const EXPORT_CONTAINER = document.getElementById('export-container');
         const PDF_BUTTON = document.getElementById('pdfButton');
         const IMAGE_BUTTON = document.getElementById('imageButton');
         let currentDayIndex = null; 
@@ -447,6 +518,72 @@
         }
 
         /**
+         * Cria uma tabela com os dados da programação
+         */
+        function createScheduleTable() {
+            // Coleta todos os compromissos organizados por dia
+            const scheduleData = {};
+            DAYS_OF_WEEK.forEach((dayName, index) => {
+                scheduleData[dayName] = [];
+                const dayBlock = document.querySelector(`.day-schedule[data-day-index="${index}"]`);
+                const commitments = dayBlock.querySelectorAll('[data-commitment]');
+                
+                commitments.forEach(item => {
+                    try {
+                        const data = JSON.parse(item.getAttribute('data-commitment'));
+                        scheduleData[dayName].push(data);
+                    } catch (e) {
+                        console.error("Erro ao analisar dados de compromisso:", e);
+                    }
+                });
+            });
+            
+            // Cria a tabela
+            let tableHTML = `
+                <div class="overflow-x-auto">
+                    <table class="web-schedule-table">
+                        <thead>
+                            <tr>
+                                ${DAYS_OF_WEEK.map(day => `<th>${day}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+            `;
+            
+            // Para cada dia, adiciona as atividades
+            DAYS_OF_WEEK.forEach(dayName => {
+                const activities = scheduleData[dayName];
+                
+                if (activities.length > 0) {
+                    let cellContent = '';
+                    activities.forEach(activity => {
+                        const duration = calculateDuration(activity.start, activity.end);
+                        cellContent += `
+                            <div class="time-slot">
+                                <div class="font-semibold">${activity.start} - ${activity.end}</div>
+                                <div>${activity.activity}</div>
+                                <div class="text-xs text-blue-600 font-bold">${formatHoursMinutes(duration)}</div>
+                            </div>
+                        `;
+                    });
+                    tableHTML += `<td>${cellContent}</td>`;
+                } else {
+                    tableHTML += '<td class="text-gray-400 text-center">Nenhuma atividade programada</td>';
+                }
+            });
+            
+            tableHTML += `
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            return tableHTML;
+        }
+
+        /**
          * Gera a programação formatada, calcula as horas e exibe o status.
          */
         function generateSchedule() {
@@ -470,13 +607,11 @@
             // 2. Calcular Total de Horas Agendadas
             let totalScheduledHours = 0;
             let hasContent = false;
-            let scheduleDetailsHTML = '';
             
             // Itera sobre os 7 dias fixos para calcular e gerar detalhes
             DAYS_OF_WEEK.forEach((dayName, index) => {
                 const dayBlock = document.querySelector(`.day-schedule[data-day-index="${index}"]`);
                 const commitments = dayBlock.querySelectorAll('[data-commitment]'); 
-                let dayActivities = [];
 
                 commitments.forEach(item => {
                     hasContent = true;
@@ -484,24 +619,10 @@
                         const data = JSON.parse(item.getAttribute('data-commitment'));
                         const duration = calculateDuration(data.start, data.end);
                         totalScheduledHours += duration; // Acumula a duração
-                        
-                        const timeRange = `${data.start} - ${data.end}`;
-                        dayActivities.push(`${timeRange} (${data.activity})`);
                     } catch (e) {
                         console.error("Erro ao analisar dados de compromisso:", e);
                     }
                 });
-
-                if (dayActivities.length > 0) {
-                    scheduleDetailsHTML += `
-                        <div class="border-b border-blue-200 py-3">
-                            <h4 class="text-lg sm:text-xl font-semibold text-blue-900 mb-2">${dayName}</h4>
-                            <ul class="activity-list ml-4 space-y-1 text-blue-700">
-                                ${dayActivities.map(activity => `<li>${activity}</li>`).join('')}
-                            </ul>
-                        </div>
-                    `;
-                }
             });
 
             const formattedScheduledTime = formatHoursMinutes(totalScheduledHours);
@@ -547,6 +668,9 @@
                     pioneerType === 'regular' ? 'PIONEIRO REGULAR' : 
                     pioneerType === 'auxiliary' ? 'PIONEIRO AUXILIAR (30h)' : 'PIONEIRO AUXILIAR REDUZIDO (15h)';
 
+                // Cria a tabela para exibição na web
+                const tableHTML = createScheduleTable();
+                
                 scheduleHTML = `
                     ${statusHTML}
                     <div class="schedule-print-container bg-blue-50 p-4 sm:p-6 rounded-xl shadow-inner border border-blue-300 mb-6">
@@ -560,7 +684,7 @@
                     </div>
                     
                     <h3 class="text-xl sm:text-2xl font-bold text-blue-700 mb-4">Programação Detalhada do Serviço</h3>
-                    ${scheduleDetailsHTML}
+                    ${tableHTML}
                 `;
                 PDF_BUTTON.classList.remove('hidden');
                 IMAGE_BUTTON.classList.remove('hidden');
@@ -574,7 +698,74 @@
         }
 
         /**
-         * Gera um PDF da programação
+         * Cria uma tabela otimizada para exportação em PDF/Imagem
+         */
+        function createTableForExport() {
+            // Coleta todos os compromissos organizados por dia
+            const scheduleData = {};
+            DAYS_OF_WEEK.forEach((dayName, index) => {
+                scheduleData[dayName] = [];
+                const dayBlock = document.querySelector(`.day-schedule[data-day-index="${index}"]`);
+                const commitments = dayBlock.querySelectorAll('[data-commitment]');
+                
+                commitments.forEach(item => {
+                    try {
+                        const data = JSON.parse(item.getAttribute('data-commitment'));
+                        scheduleData[dayName].push(data);
+                    } catch (e) {
+                        console.error("Erro ao analisar dados de compromisso:", e);
+                    }
+                });
+            });
+            
+            // Cria a tabela otimizada para PDF/Imagem
+            let tableHTML = `
+                <div id="export-table" style="width: 1000px; font-family: Arial, sans-serif; background: white; padding: 20px;">
+                    <h2 style="text-align: center; color: #1e3a8a; font-size: 24px; margin-bottom: 20px; font-weight: bold;">PROGRAMAÇÃO SEMANAL DE SERVIÇO DE CAMPO</h2>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px; border: 2px solid #1e3a8a;">
+                        <thead>
+                            <tr>
+                                ${DAYS_OF_WEEK.map(day => `<th style="width: 14.28%; background-color: #3b82f6; color: white; padding: 12px; text-align: center; border: 1px solid #1e3a8a; font-weight: bold;">${day}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+            `;
+            
+            // Para cada dia, adiciona as atividades
+            DAYS_OF_WEEK.forEach(dayName => {
+                const activities = scheduleData[dayName];
+                
+                if (activities.length > 0) {
+                    let cellContent = '';
+                    activities.forEach(activity => {
+                        const duration = calculateDuration(activity.start, activity.end);
+                        cellContent += `
+                            <div style="font-size: 10px; margin-bottom: 8px; padding: 6px; background-color: #eff6ff; border-radius: 4px; border-left: 3px solid #3b82f6;">
+                                <div style="font-weight: bold; color: #1e40af;">${activity.start} - ${activity.end}</div>
+                                <div style="margin: 4px 0;">${activity.activity}</div>
+                                <div style="color: #3b82f6; font-weight: bold;">${formatHoursMinutes(duration)}</div>
+                            </div>
+                        `;
+                    });
+                    tableHTML += `<td style="vertical-align: top; padding: 10px; border: 1px solid #cbd5e0; min-height: 120px;">${cellContent}</td>`;
+                } else {
+                    tableHTML += '<td style="vertical-align: top; padding: 10px; border: 1px solid #cbd5e0; color: #9ca3af; text-align: center; min-height: 120px;">Nenhuma atividade programada</td>';
+                }
+            });
+            
+            tableHTML += `
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            return tableHTML;
+        }
+
+        /**
+         * Gera um PDF da programação em formato de tabela
          */
         function generatePDF() {
             // Verifica se a biblioteca jsPDF está disponível
@@ -583,35 +774,49 @@
                 return;
             }
 
+            // Verifica se há conteúdo para exportar
+            const hasContent = document.querySelectorAll('[data-commitment]').length > 0;
+            if (!hasContent) {
+                alert('Adicione atividades antes de gerar o PDF.');
+                return;
+            }
+
             const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
+            const doc = new jsPDF('l', 'mm', 'a4'); // Orientação paisagem para caber a tabela
             
-            // Título do documento
-            doc.setFontSize(18);
-            doc.setTextColor(30, 58, 138); // Azul escuro
-            doc.text('PROGRAMAÇÃO SEMANAL DE SERVIÇO DE CAMPO', 105, 20, { align: 'center' });
+            // Cria a tabela para exportação
+            const tableHTML = createTableForExport();
+            EXPORT_CONTAINER.innerHTML = tableHTML;
             
-            // Adiciona conteúdo da programação
-            const contentElement = document.getElementById('schedule-output');
-            const contentHTML = contentElement.innerHTML;
-            
-            // Extrai texto para o PDF (simplificado)
-            const contentText = contentElement.innerText;
-            
-            // Divide o texto em linhas para caber no PDF
-            const lines = doc.splitTextToSize(contentText, 180);
-            
-            // Adiciona o texto ao PDF
-            doc.setFontSize(10);
-            doc.setTextColor(0, 0, 0); // Preto
-            doc.text(lines, 15, 40);
-            
-            // Salva o PDF
-            doc.save('programacao-semanal-pioneiro.pdf');
+            // Captura a tabela com html2canvas
+            html2canvas(EXPORT_CONTAINER, {
+                scale: 2,
+                useCORS: true,
+                allowTaint: false,
+                backgroundColor: '#ffffff',
+                logging: false
+            }).then(canvas => {
+                const imgData = canvas.toDataURL('image/jpeg', 0.9);
+                const imgWidth = doc.internal.pageSize.getWidth() - 20; // Margem de 10mm de cada lado
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                
+                // Adiciona a imagem ao PDF
+                doc.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
+                
+                // Salva o PDF
+                doc.save('programacao-semanal-pioneiro.pdf');
+                
+                // Limpa o container de exportação
+                EXPORT_CONTAINER.innerHTML = '';
+            }).catch(error => {
+                console.error('Erro ao gerar PDF:', error);
+                alert('Erro ao gerar PDF. Tente novamente.');
+                EXPORT_CONTAINER.innerHTML = '';
+            });
         }
 
         /**
-         * Gera uma imagem da programação
+         * Gera uma imagem da programação em formato de tabela
          */
         function generateImage() {
             // Verifica se a biblioteca html2canvas está disponível
@@ -620,14 +825,24 @@
                 return;
             }
 
-            const element = document.getElementById('schedule-output');
+            // Verifica se há conteúdo para exportar
+            const hasContent = document.querySelectorAll('[data-commitment]').length > 0;
+            if (!hasContent) {
+                alert('Adicione atividades antes de gerar a imagem.');
+                return;
+            }
+
+            // Cria a tabela para exportação
+            const tableHTML = createTableForExport();
+            EXPORT_CONTAINER.innerHTML = tableHTML;
             
             // Configurações para melhor qualidade
-            html2canvas(element, {
-                scale: 2, // Maior resolução
+            html2canvas(EXPORT_CONTAINER, {
+                scale: 2,
                 useCORS: true,
-                allowTaint: true,
-                backgroundColor: '#ffffff'
+                allowTaint: false,
+                backgroundColor: '#ffffff',
+                logging: false
             }).then(canvas => {
                 // Converte canvas para imagem
                 const image = canvas.toDataURL('image/png');
@@ -636,7 +851,16 @@
                 const link = document.createElement('a');
                 link.download = 'programacao-semanal-pioneiro.png';
                 link.href = image;
+                document.body.appendChild(link);
                 link.click();
+                document.body.removeChild(link);
+                
+                // Limpa o container de exportação
+                EXPORT_CONTAINER.innerHTML = '';
+            }).catch(error => {
+                console.error('Erro ao gerar imagem:', error);
+                alert('Erro ao gerar imagem. Tente novamente.');
+                EXPORT_CONTAINER.innerHTML = '';
             });
         }
 

@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planejador Semanal de Pioneiro</title>
+    <!-- Carrega Tailwind CSS para estilização -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Bibliotecas para PDF e imagem -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        /* Configurações de fonte e cores base (em tons de azul) */
+        :root {
+            --color-primary: #3b82f6; /* Blue-500 */
+            --color-light: #eff6ff;   /* Blue-50 */
+            --color-dark: #1e3a8a;    /* Blue-900 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--color-light);
+        }
+        /* Estilos específicos para impressão (PDF) */
+        @media print {
+            body {
+                background-color: white !important;
+                margin: 0;
+                padding: 0;
+            }
+            #app-container {
+                box-shadow: none !important;
+                border: none !important;
+                padding: 0 !important;
+                /* Adiciona um título ao topo da página impressa */
+                counter-increment: page;
+                margin-top: 1cm;
+            }
+            #app-container:before {
+                content: "PROGRAMAÇÃO SEMANAL DE SERVIÇO DE CAMPO";
+                display: block;
+                text-align: center;
+                font-size: 1.5rem;
+                font-weight: bold;
+                color: var(--color-dark);
+                margin-bottom: 0.5cm;
+            }
+            .print-hidden {
+                display: none !important;
+            }
+            .schedule-print-container {
+                page-break-after: avoid; 
+                border: 1px solid #ccc;
+                padding: 1rem;
+                margin-bottom: 1rem;
+            }
+            .schedule-print-container h3 {
+                color: var(--color-dark);
+            }
+            .activity-list {
+                list-style: none;
+                padding-left: 0;
+            }
+            .activity-list li:before {
+                content: "• ";
+                color: var(--color-primary);
+                font-weight: bold;
+                display: inline-block;
+                width: 1em;
+                margin-left: -1em;
+            }
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8">
+
+    <div id="app-container" class="max-w-4xl mx-auto bg-white rounded-xl shadow-2xl p-4 md:p-10 border-t-8 border-blue-600">
+        
+        <!-- Cabeçalho -->
+        <header class="mb-6 print-hidden">
+            <h1 class="text-2xl sm:text-4xl font-extrabold text-blue-800 mb-2">
+                Planejador Semanal de Serviço de Campo
+            </h1>
+            <p class="text-blue-600 text-base sm:text-lg">
+                Organize sua programação semanal como Pioneiro Auxiliar ou Regular.
+            </p>
+        </header>
+
+        <!-- Área de Configuração (Escondida na impressão) -->
+        <section id="config-area" class="space-y-6 mb-8 print-hidden">
+            
+            <!-- 1. Escolha do Tipo de Pioneiro -->
+            <div class="p-4 sm:p-5 bg-blue-50 rounded-lg border border-blue-200">
+                <h2 class="text-lg sm:text-xl font-semibold text-blue-700 mb-3">1. Escolha de Meta Mensal</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+                    <label class="flex items-center space-x-2 sm:space-x-3 p-2 sm:p-3 bg-white border border-blue-300 rounded-lg shadow-sm cursor-pointer hover:bg-blue-100 transition w-full">
+                        <input type="radio" name="pioneerType" value="regular" checked
+                               class="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 border-blue-300 focus:ring-blue-500"
+                               onchange="updateGoal()">
+                        <span class="text-sm sm:text-base font-medium text-blue-800">Pioneiro Regular (50h/mês)</span>
+                    </label>
+                    <label class="flex items-center space-x-2 sm:space-x-3 p-2 sm:p-3 bg-white border border-blue-300 rounded-lg shadow-sm cursor-pointer hover:bg-blue-100 transition w-full">
+                        <input type="radio" name="pioneerType" value="auxiliary"
+                               class="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 border-blue-300 focus:ring-blue-500"
+                               onchange="updateGoal()">
+                        <span class="text-sm sm:text-base font-medium text-blue-800">Pioneiro Auxiliar (30h/mês)</span>
+                    </label>
+                    <label class="flex items-center space-x-2 sm:space-x-3 p-2 sm:p-3 bg-white border border-blue-300 rounded-lg shadow-sm cursor-pointer hover:bg-blue-100 transition w-full">
+                        <input type="radio" name="pioneerType" value="reduced_auxiliary"
+                               class="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 border-blue-300 focus:ring-blue-500"
+                               onchange="updateGoal()">
+                        <span class="text-sm sm:text-base font-medium text-blue-800">Pioneiro Auxiliar Reduzido (15h/mês)</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- 2. Metas Calculadas -->
+            <div class="p-4 sm:p-5 bg-blue-50 rounded-lg border border-blue-200">
+                <h2 class="text-lg sm:text-xl font-semibold text-blue-700 mb-3">2. Suas Metas Calculadas (Semanal)</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-center">
+                    <div class="p-3 sm:p-4 bg-blue-200 rounded-lg">
+                        <p class="text-xs sm:text-sm text-blue-800 font-medium">Meta Mensal (h)</p>
+                        <p id="monthlyGoal" class="text-xl sm:text-2xl font-bold text-blue-900">50</p>
+                    </div>
+                    <div class="p-3 sm:p-4 bg-blue-600 rounded-lg text-white">
+                        <p class="text-xs sm:text-sm font-medium">Meta Semanal (aprox.)</p>
+                        <p id="weeklyGoalText" class="text-2xl sm:text-3xl font-bold">12h 30m</p>
+                    </div>
+                </div>
+                <p class="mt-3 sm:mt-4 text-xs sm:text-sm text-blue-700 text-center">
+                    *Estimativa baseada em 4 semanas/mês. Use como guia para montar sua programação.
+                </p>
+            </div>
+        </section>
+
+        <!-- Área de Programação Detalhada -->
+        <section class="mb-8">
+            <h2 class="text-xl sm:text-2xl font-bold text-blue-800 mb-4 print-hidden">3. Montar Programação Semanal Detalhada</h2>
+            
+            <div id="schedule-builder" class="space-y-4 sm:space-y-6 print-hidden">
+                <!-- Modelo de Dia Semanal (7 dias fixos) -->
+            </div>
+
+            <div class="mt-6 flex justify-center print-hidden">
+                <button onclick="generateSchedule()"
+                        class="w-full sm:w-1/2 bg-green-500 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-green-600 transition duration-300">
+                    Gerar e Visualizar Programação
+                </button>
+            </div>
+        </section>
+
+        <!-- Área de Visualização e Impressão -->
+        <section id="print-area" class="mt-6 border-t pt-4 border-blue-300">
+            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 space-y-3 sm:space-y-0">
+                <h2 class="text-xl sm:text-2xl font-bold text-blue-800">Programação Finalizada</h2>
+                <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                    <button onclick="generatePDF()" id="pdfButton"
+                            class="bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-600 transition duration-300 print-hidden hidden">
+                        Gerar PDF
+                    </button>
+                    <button onclick="generateImage()" id="imageButton"
+                            class="bg-purple-500 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-purple-600 transition duration-300 print-hidden hidden">
+                        Gerar Imagem
+                    </button>
+                </div>
+            </div>
+            
+            <div id="schedule-output" class="space-y-4">
+                <p class="text-center text-gray-500">
+                    Preencha as informações acima e clique em "Gerar e Visualizar Programação" para ver seu plano.
+                </p>
+            </div>
+        </section>
+
+    </div>
+    
+    <!-- Modal para Adicionar Compromisso -->
+    <div id="commitmentModal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50 print-hidden">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg p-4 sm:p-6 space-y-4">
+            <h3 class="text-xl sm:text-2xl font-bold text-blue-800" id="modalDayTitle">Adicionar Compromisso:</h3>
+            
+            <!-- Mensagem de erro -->
+            <div id="modalError" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative text-sm" role="alert">
+                O horário final deve ser depois do horário de início.
+            </div>
+
+            <div>
+                <label for="activitySelect" class="block text-sm font-medium text-gray-700 mb-1">Atividade:</label>
+                <select id="activitySelect" class="w-full p-2 sm:p-3 border border-blue-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition">
+                    <option value="">-- Selecione --</option>
+                    <option value="Serviço de pregação de casa em casa">Serviço de pregação de casa em casa</option>
+                    <option value="Carrinho / Testemunho Público">Carrinho / Testemunho Público</option>
+                    <option value="Testemunho nas Ruas">Testemunho nas Ruas</option>
+                    <option value="Estudo Bíblico (Fixo)">Estudo Bíblico (Fixo)</option>
+                    <option value="Revisita / Estudo (Não Fixo)">Revisita / Estudo (Não Fixo)</option>
+                    <option value="Testemunho por Carta/Telefone">Testemunho por Carta/Telefone</option>
+                    <option value="Folga / Compensação de Horas">Folga / Compensação de Horas</option>
+                    <option value="Outro">Outro (Especifique o texto no Horário)</option>
+                </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 sm:gap-4">
+                <div>
+                    <label for="startTimeSelect" class="block text-sm font-medium text-gray-700 mb-1">Início:</label>
+                    <select id="startTimeSelect" class="w-full p-2 sm:p-3 border border-blue-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition"></select>
+                </div>
+                <div>
+                    <label for="endTimeSelect" class="block text-sm font-medium text-gray-700 mb-1">Fim:</label>
+                    <select id="endTimeSelect" class="w-full p-2 sm:p-3 border border-blue-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition"></select>
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-2 sm:space-x-3">
+                <button onclick="closeCommitmentModal()" 
+                        class="bg-gray-300 text-gray-800 font-semibold py-2 px-3 sm:px-4 rounded-lg hover:bg-gray-400 transition">
+                    Cancelar
+                </button>
+                <button onclick="saveCommitment()" 
+                        class="bg-blue-600 text-white font-semibold py-2 px-3 sm:px-4 rounded-lg hover:bg-blue-700 transition">
+                    Salvar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DAYS_OF_WEEK = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
+        const WEEKS_IN_MONTH = 4.0; // Simplificado para cálculo
+
+        const SCHEDULE_BUILDER = document.getElementById('schedule-builder');
+        const SCHEDULE_OUTPUT = document.getElementById('schedule-output');
+        const PDF_BUTTON = document.getElementById('pdfButton');
+        const IMAGE_BUTTON = document.getElementById('imageButton');
+        let currentDayIndex = null; 
+
+        // --- Funções de Ajuda ---
+
+        /**
+         * Converte horas decimais para o formato Hh Mm.
+         * @param {number} decimalHours - Horas em formato decimal.
+         * @returns {string} - String formatada (Ex: "12h 30m").
+         */
+        function formatHoursMinutes(decimalHours) {
+            if (isNaN(decimalHours) || decimalHours <= 0) return "0h 0m";
+            const totalMinutes = Math.round(decimalHours * 60);
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+            return `${hours}h ${minutes}m`;
+        }
+        
+        /**
+         * Calcula a duração entre dois horários HH:MM em horas decimais.
+         * @param {string} start - Horário de início ("HH:MM").
+         * @param {string} end - Horário de fim ("HH:MM").
+         * @returns {number} - Duração em horas decimais.
+         */
+        function calculateDuration(start, end) {
+            const [sh, sm] = start.split(':').map(Number);
+            const [eh, em] = end.split(':').map(Number);
+
+            const startMinutes = sh * 60 + sm;
+            const endMinutes = eh * 60 + em;
+            
+            // A validação do modal garante que endMinutes > startMinutes
+            const durationMinutes = endMinutes - startMinutes; 
+            
+            return durationMinutes / 60; // Retorna horas decimais
+        }
+
+        /**
+         * Gera as opções de horário (00:00 a 23:55 em incrementos de 5 min).
+         */
+        function generateTimeOptions() {
+            const selectStart = document.getElementById('startTimeSelect');
+            const selectEnd = document.getElementById('endTimeSelect');
+            const INTERVAL_MINUTES = 5; // Novo intervalo de 5 minutos
+            
+            // Limpa opções existentes
+            selectStart.innerHTML = '';
+            selectEnd.innerHTML = '';
+
+            for (let h = 0; h < 24; h++) {
+                // Itera de 0 a 55, pulando de 5 em 5 minutos
+                for (let m = 0; m < 60; m += INTERVAL_MINUTES) {
+                    const timeValue = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                    
+                    const optionStart = document.createElement('option');
+                    optionStart.value = timeValue;
+                    optionStart.textContent = timeValue;
+
+                    const optionEnd = document.createElement('option');
+                    optionEnd.value = timeValue;
+                    optionEnd.textContent = timeValue;
+
+                    selectStart.appendChild(optionStart);
+                    selectEnd.appendChild(optionEnd);
+                }
+            }
+            // Define um valor inicial padrão para melhor UX
+            selectStart.value = "09:00"; 
+            selectEnd.value = "11:00"; 
+        }
+
+        // --- Funções de Estrutura e Lógica Principal ---
+
+        /**
+         * Abre o modal de compromisso.
+         * @param {number} dayIndex - O índice do dia (0-6).
+         */
+        function openCommitmentModal(dayIndex) {
+            currentDayIndex = dayIndex;
+            document.getElementById('modalDayTitle').textContent = `Adicionar Compromisso: ${DAYS_OF_WEEK[dayIndex]}`;
+            document.getElementById('modalError').classList.add('hidden');
+            document.getElementById('commitmentModal').classList.remove('hidden');
+            document.body.classList.add('overflow-hidden'); // Para travar o scroll de fundo
+            
+            // Garante que as opções de tempo estejam geradas
+            if (document.getElementById('startTimeSelect').options.length === 0) {
+                generateTimeOptions();
+            }
+            
+            // Limpa a seleção de atividade
+            document.getElementById('activitySelect').value = ''; 
+        }
+
+        /**
+         * Fecha o modal de compromisso.
+         */
+        function closeCommitmentModal() {
+            currentDayIndex = null;
+            document.getElementById('commitmentModal').classList.add('hidden');
+            document.body.classList.remove('overflow-hidden');
+        }
+
+        /**
+         * Remove um compromisso diretamente da lista (main view).
+         * @param {HTMLElement} button - O botão de remover clicado.
+         */
+        function removeCommitmentFromList(button) {
+            const commitmentElement = button.closest('div');
+            if (commitmentElement) {
+                commitmentElement.remove();
+            }
+        }
+
+        /**
+         * Valida e salva o compromisso no dia correspondente.
+         */
+        function saveCommitment() {
+            const activitySelect = document.getElementById('activitySelect');
+            const activityText = activitySelect.options[activitySelect.selectedIndex].text;
+            const startTime = document.getElementById('startTimeSelect').value;
+            const endTime = document.getElementById('endTimeSelect').value;
+            const modalError = document.getElementById('modalError');
+
+            if (!activitySelect.value) {
+                modalError.textContent = "Por favor, selecione uma atividade.";
+                modalError.classList.remove('hidden');
+                return;
+            }
+
+            // Validação de tempo (garantir que Fim > Início)
+            if (endTime <= startTime) {
+                modalError.textContent = "O horário final deve ser depois do horário de início.";
+                modalError.classList.remove('hidden');
+                return;
+            }
+
+            modalError.classList.add('hidden');
+
+            const dayContainer = document.querySelector(`.day-schedule[data-day-index="${currentDayIndex}"] .commitments-container`);
+            
+            // Cria o elemento de exibição do compromisso
+            const commitmentElement = document.createElement('div');
+            commitmentElement.className = 'flex justify-between items-center p-2 bg-white border border-blue-300 rounded-lg shadow-sm';
+            
+            // Cria o dado JSON para armazenamento e recuperação
+            const commitmentData = JSON.stringify({
+                start: startTime,
+                end: endTime,
+                activity: activityText
+            });
+            
+            commitmentElement.setAttribute('data-commitment', commitmentData);
+            
+            commitmentElement.innerHTML = `
+                <div class="text-xs sm:text-sm font-medium">
+                    <span class="text-blue-900 font-bold">${startTime} - ${endTime}</span>: ${activityText}
+                </div>
+                <button onclick="removeCommitmentFromList(this)" type="button" class="text-red-500 hover:text-red-700 transition text-xs font-semibold px-2">
+                    X
+                </button>
+            `;
+            
+            dayContainer.appendChild(commitmentElement);
+            closeCommitmentModal();
+        }
+
+        /**
+         * Inicializa a estrutura de 7 dias na área de programação.
+         */
+        function initializeScheduleBuilder() {
+            SCHEDULE_BUILDER.innerHTML = '';
+            DAYS_OF_WEEK.forEach((dayName, index) => {
+                const dayBlock = document.createElement('div');
+                dayBlock.className = 'day-schedule p-3 sm:p-4 bg-blue-50 border border-blue-200 rounded-lg';
+                dayBlock.setAttribute('data-day-index', index);
+                dayBlock.innerHTML = `
+                    <div class="flex justify-between items-center mb-2 sm:mb-3 border-b border-blue-300 pb-2">
+                        <h4 class="text-lg sm:text-xl font-bold text-blue-700">${dayName}</h4>
+                        <button onclick="openCommitmentModal(${index})" type="button" 
+                                class="bg-blue-600 text-white font-semibold py-1 px-2 sm:px-3 rounded-full shadow-md hover:bg-blue-700 transition text-xs sm:text-sm">
+                            + Adicionar
+                        </button>
+                    </div>
+                    <div class="commitments-container space-y-2 text-blue-800">
+                        <!-- Itens de compromisso serão adicionados aqui -->
+                    </div>
+                `;
+                SCHEDULE_BUILDER.appendChild(dayBlock);
+            });
+        }
+
+        /**
+         * Calcula e exibe a meta semanal necessária.
+         */
+        function updateGoal() {
+            const pioneerType = document.querySelector('input[name="pioneerType"]:checked').value;
+            let monthlyGoalHours;
+            
+            if (pioneerType === 'regular') {
+                monthlyGoalHours = 50;
+            } else if (pioneerType === 'auxiliary') {
+                monthlyGoalHours = 30;
+            } else if (pioneerType === 'reduced_auxiliary') {
+                monthlyGoalHours = 15; // Nova meta
+            } else {
+                monthlyGoalHours = 0;
+            }
+            
+            // Calcula meta semanal
+            const weeklyGoalDecimal = monthlyGoalHours / WEEKS_IN_MONTH;
+            const weeklyGoalText = formatHoursMinutes(weeklyGoalDecimal);
+
+            document.getElementById('monthlyGoal').textContent = monthlyGoalHours;
+            document.getElementById('weeklyGoalText').textContent = weeklyGoalText;
+        }
+
+        /**
+         * Gera a programação formatada, calcula as horas e exibe o status.
+         */
+        function generateSchedule() {
+            const pioneerType = document.querySelector('input[name="pioneerType"]:checked').value;
+            const monthlyGoal = document.getElementById('monthlyGoal').textContent;
+            
+            // 1. Determine a meta semanal em horas decimais
+            let monthlyGoalHours;
+            if (pioneerType === 'regular') {
+                monthlyGoalHours = 50;
+            } else if (pioneerType === 'auxiliary') {
+                monthlyGoalHours = 30;
+            } else if (pioneerType === 'reduced_auxiliary') {
+                monthlyGoalHours = 15;
+            } else {
+                monthlyGoalHours = 0;
+            }
+            const weeklyGoalDecimal = monthlyGoalHours / WEEKS_IN_MONTH;
+            const formattedGoalTime = formatHoursMinutes(weeklyGoalDecimal);
+
+            // 2. Calcular Total de Horas Agendadas
+            let totalScheduledHours = 0;
+            let hasContent = false;
+            let scheduleDetailsHTML = '';
+            
+            // Itera sobre os 7 dias fixos para calcular e gerar detalhes
+            DAYS_OF_WEEK.forEach((dayName, index) => {
+                const dayBlock = document.querySelector(`.day-schedule[data-day-index="${index}"]`);
+                const commitments = dayBlock.querySelectorAll('[data-commitment]'); 
+                let dayActivities = [];
+
+                commitments.forEach(item => {
+                    hasContent = true;
+                    try {
+                        const data = JSON.parse(item.getAttribute('data-commitment'));
+                        const duration = calculateDuration(data.start, data.end);
+                        totalScheduledHours += duration; // Acumula a duração
+                        
+                        const timeRange = `${data.start} - ${data.end}`;
+                        dayActivities.push(`${timeRange} (${data.activity})`);
+                    } catch (e) {
+                        console.error("Erro ao analisar dados de compromisso:", e);
+                    }
+                });
+
+                if (dayActivities.length > 0) {
+                    scheduleDetailsHTML += `
+                        <div class="border-b border-blue-200 py-3">
+                            <h4 class="text-lg sm:text-xl font-semibold text-blue-900 mb-2">${dayName}</h4>
+                            <ul class="activity-list ml-4 space-y-1 text-blue-700">
+                                ${dayActivities.map(activity => `<li>${activity}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+            });
+
+            const formattedScheduledTime = formatHoursMinutes(totalScheduledHours);
+            let statusHTML = '';
+
+            // 3. Gerar Mensagem de Status (sucesso/falha)
+            if (hasContent && weeklyGoalDecimal > 0) {
+                if (totalScheduledHours >= weeklyGoalDecimal) {
+                    // Sucesso
+                    statusHTML = `
+                        <div class="p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg text-center shadow-lg mb-6">
+                            <h4 class="text-lg sm:text-xl font-bold mb-1">Parabéns! Meta Semanal Atingida! </h4>
+                            <p class="text-base sm:text-lg">Você programou <span class="font-extrabold">${formattedScheduledTime}</span> de serviço. Sua meta semanal era de ${formattedGoalTime}.</p>
+                            <p class="mt-2 text-xs sm:text-sm">Continue com este excelente ritmo para garantir sua meta mensal!</p>
+                        </div>
+                    `;
+                } else {
+                    // Pendente
+                    const remainingHours = weeklyGoalDecimal - totalScheduledHours;
+                    const formattedRemainingTime = formatHoursMinutes(remainingHours);
+                    statusHTML = `
+                        <div class="p-4 bg-yellow-100 border border-yellow-500 text-yellow-700 rounded-lg text-center shadow-lg mb-6">
+                            <h4 class="text-lg sm:text-xl font-bold mb-1">Atenção: Meta Semanal Pendente</h4>
+                            <p class="text-base sm:text-lg">Você programou <span class="font-extrabold">${formattedScheduledTime}</span> de serviço. Sua meta semanal é de ${formattedGoalTime}.</p>
+                            <p class="mt-2 text-sm">Acrescente mais <span class="font-extrabold text-red-600">${formattedRemainingTime}</span> para atingir sua meta semanal e alcançar a meta mensal.</p>
+                        </div>
+                    `;
+                }
+            } else if (!hasContent && monthlyGoalHours > 0) {
+                 // Programação Vazia
+                statusHTML = `
+                    <div class="p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg text-center shadow-lg mb-6">
+                        <h4 class="text-lg sm:text-xl font-bold mb-1">Programação Vazia</h4>
+                        <p class="text-base sm:text-lg">Adicione atividades! Você precisa de pelo menos <span class="font-extrabold">${formattedGoalTime}</span> de serviço por semana para atingir sua meta.</p>
+                    </div>
+                `;
+            }
+
+            // 4. Montar o HTML Final
+            let scheduleHTML = '';
+            if (hasContent || monthlyGoalHours === 0) {
+                const summaryTitle = 
+                    pioneerType === 'regular' ? 'PIONEIRO REGULAR' : 
+                    pioneerType === 'auxiliary' ? 'PIONEIRO AUXILIAR (30h)' : 'PIONEIRO AUXILIAR REDUZIDO (15h)';
+
+                scheduleHTML = `
+                    ${statusHTML}
+                    <div class="schedule-print-container bg-blue-50 p-4 sm:p-6 rounded-xl shadow-inner border border-blue-300 mb-6">
+                        <h3 class="text-xl sm:text-2xl font-bold text-blue-700 border-b pb-2 mb-3">Resumo do Plano Semanal (${summaryTitle})</h3>
+                        <p class="text-base sm:text-lg text-blue-800">
+                            Meta Mensal: <span class="font-bold">${monthlyGoal} horas</span>
+                        </p>
+                        <p class="text-base sm:text-lg text-blue-800">
+                            Total Agendado na Semana: <span class="font-bold text-blue-600">${formattedScheduledTime}</span>
+                        </p>
+                    </div>
+                    
+                    <h3 class="text-xl sm:text-2xl font-bold text-blue-700 mb-4">Programação Detalhada do Serviço</h3>
+                    ${scheduleDetailsHTML}
+                `;
+                PDF_BUTTON.classList.remove('hidden');
+                IMAGE_BUTTON.classList.remove('hidden');
+            } else {
+                scheduleHTML = statusHTML; // Exibe apenas a mensagem de erro/vazio
+                PDF_BUTTON.classList.add('hidden');
+                IMAGE_BUTTON.classList.add('hidden');
+            }
+            
+            SCHEDULE_OUTPUT.innerHTML = scheduleHTML;
+        }
+
+        /**
+         * Gera um PDF da programação
+         */
+        function generatePDF() {
+            // Verifica se a biblioteca jsPDF está disponível
+            if (typeof window.jspdf === 'undefined') {
+                alert('Erro: Biblioteca jsPDF não carregada. Verifique sua conexão.');
+                return;
+            }
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Título do documento
+            doc.setFontSize(18);
+            doc.setTextColor(30, 58, 138); // Azul escuro
+            doc.text('PROGRAMAÇÃO SEMANAL DE SERVIÇO DE CAMPO', 105, 20, { align: 'center' });
+            
+            // Adiciona conteúdo da programação
+            const contentElement = document.getElementById('schedule-output');
+            const contentHTML = contentElement.innerHTML;
+            
+            // Extrai texto para o PDF (simplificado)
+            const contentText = contentElement.innerText;
+            
+            // Divide o texto em linhas para caber no PDF
+            const lines = doc.splitTextToSize(contentText, 180);
+            
+            // Adiciona o texto ao PDF
+            doc.setFontSize(10);
+            doc.setTextColor(0, 0, 0); // Preto
+            doc.text(lines, 15, 40);
+            
+            // Salva o PDF
+            doc.save('programacao-semanal-pioneiro.pdf');
+        }
+
+        /**
+         * Gera uma imagem da programação
+         */
+        function generateImage() {
+            // Verifica se a biblioteca html2canvas está disponível
+            if (typeof html2canvas === 'undefined') {
+                alert('Erro: Biblioteca html2canvas não carregada. Verifique sua conexão.');
+                return;
+            }
+
+            const element = document.getElementById('schedule-output');
+            
+            // Configurações para melhor qualidade
+            html2canvas(element, {
+                scale: 2, // Maior resolução
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: '#ffffff'
+            }).then(canvas => {
+                // Converte canvas para imagem
+                const image = canvas.toDataURL('image/png');
+                
+                // Cria um link para download
+                const link = document.createElement('a');
+                link.download = 'programacao-semanal-pioneiro.png';
+                link.href = image;
+                link.click();
+            });
+        }
+
+        /**
+         * Inicializa o planejador ao carregar a página.
+         */
+        window.onload = function() {
+            initializeScheduleBuilder();
+            updateGoal();
+            generateTimeOptions(); // Garante que as opções de tempo estejam prontas
+        };
+
+    </script>
+</body>
+</html>

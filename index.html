@@ -372,6 +372,19 @@
             selectEnd.value = "11:00"; 
         }
 
+        /**
+         * Ordena as atividades por horário de início (crescente)
+         * @param {Array} activities - Array de atividades
+         * @returns {Array} - Array ordenado por horário
+         */
+        function sortActivitiesByTime(activities) {
+            return activities.sort((a, b) => {
+                const [aHour, aMinute] = a.start.split(':').map(Number);
+                const [bHour, bMinute] = b.start.split(':').map(Number);
+                return (aHour * 60 + aMinute) - (bHour * 60 + bMinute);
+            });
+        }
+
         // --- Funções de Estrutura e Lógica Principal ---
 
         /**
@@ -536,6 +549,9 @@
                         console.error("Erro ao analisar dados de compromisso:", e);
                     }
                 });
+                
+                // Ordena as atividades por horário
+                scheduleData[dayName] = sortActivitiesByTime(scheduleData[dayName]);
             });
             
             // Cria a tabela
@@ -716,6 +732,9 @@
                         console.error("Erro ao analisar dados de compromisso:", e);
                     }
                 });
+                
+                // Ordena as atividades por horário
+                scheduleData[dayName] = sortActivitiesByTime(scheduleData[dayName]);
             });
             
             // Cria a tabela otimizada para PDF/Imagem
